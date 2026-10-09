@@ -1,0 +1,155 @@
+<?php
+require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../login/verifica_user.php';
+?>
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adicionar título</title>
+    <link rel="stylesheet" href="/streamlist/assets/style.css">
+</head>
+<body>
+    <?php include __DIR__ . '/../includes/header.php'; ?>
+    <main class="container">
+        <h1>Adicionar filme ou série</h1>
+
+        <form class="card-form form-grande" action="" method="post">
+            <div class="preview">
+                <img id="preview-capa" src="" alt="Capa" style="display:none">
+                <div id="sem-capa" class="sem-capa">Sem capa</div>
+            </div>
+
+            <div class="campos">
+                <label for="titulo">Título do filme ou série</label>
+                <input type="text" name="titulo" id="titulo" placeholder="Ex: Naruto" required>
+
+                <div class="linha">
+                    <div>
+                        <label for="tipo">Tipo</label>
+                        <select name="tipo" id="tipo">
+                            <option value="filme">Filme</option>
+                            <option value="serie">Série</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="status">Status</label>
+                        <select name="status" id="status">
+                            <option value="quero">Quero assistir</option>
+                            <option value="assistindo">Assistindo</option>
+                            <option value="assistido">Já assisti</option>
+                        </select>
+                    </div>
+                    <div id="campo-nota" style="display:none">
+                        <label for="nota">Nota (1–10)</label>
+                        <input type="number" name="nota" id="nota" min="1" max="10" placeholder="Ex: 9">
+                    </div>
+                </div>
+
+                <label for="review">Comentário / review</label>
+                <textarea name="review" id="review" rows="3" placeholder="O que você achou?"></textarea>
+
+                <p class="dica">Capas encontradas pela API (clique para escolher):</p>
+                <div id="capas" class="capas"></div>
+
+                <input type="hidden" name="capa" id="capa">
+
+                <div class="acoes">
+                    <input class="btn" type="submit" value="Salvar na Vitrine">
+                    <a class="btn-sec" href="/streamlist/app/read.php">Cancelar</a>
+                </div>
+            </div>
+        </form>
+
+        <?php
+        if ($_SERVER['REQUEST_METHOD'] == "POST") {
+            $ok = cadastrar(
+                $conexao,
+                $_SESSION['id'],
+                $_POST['titulo'],
+                $_POST['tipo'],
+                $_POST['status'],
+                $_POST['nota'],
+                $_POST['review'],
+                $_POST['capa']
+            );
+            if ($ok) {
+                header("Location: /streamlist/app/read.php");
+                exit();
+            }
+        }
+        ?>
+    </main>
+    <?php include __DIR__ . '/../includes/footer.php'; ?>
+
+    <script src="/streamlist/assets/capas.js"></script>
+    <script>
+    // Mostra o campo de nota só quando o status é "assistindo" ou "assistido"
+    const status = document.getElementById('status');
+    const campoNota = document.getElementById('campo-nota');
+    const nota = document.getElementById('nota');
+
+    function atualizaNota() {
+        if (status.value === 'quero') {
+            campoNota.style.display = 'none';
+            nota.value = '';
+        } else {
+            campoNota.style.display = 'flex';
+        }
+    }
+    status.addEventListener('change', atualizaNota);
+    atualizaNota();
+
+    // ---------- busca de capas pelo título digitado ----------
+    const titulo = document.getElementById('titulo');
+    const tipo = document.getElementById('tipo');
+    let timer = null;
+    let numeroBusca = 0;
+
+    async function buscaCapas() {
+        const nome = titulo.value.trim();
+        capasDiv.innerHTML = '';
+        if (nome.length < 2) return;
+
+        // guarda o número desta busca para ignorar respostas antigas
+        numeroBusca++;
+        const minhaBusca = numeroBusca;
+
+        capasDiv.innerHTML = '<span class="dica">Buscando...</span>';
+        let capas = [];
+        try {
+            // busca primeiro o tipo escolhido; se vier pouca coisa, completa com o outro
+            if (tipo.value === 'filme') {
+                capas = await buscaFilmes(nome);
+                if (capas.length < 3) capas = capas.concat(await buscaSeries(nome));
+            } else {
+                capas = await buscaSeries(nome);
+                if (capas.length < 3) capas = capas.concat(await buscaFilmes(nome));
+            }
+        } catch (erro) {
+            capasDiv.innerHTML = '<span class="dica">Não foi possível buscar as capas agora.</span>';
+            return;
+        }
+
+        // se o usuário digitou outra coisa enquanto esperava, ignora este resultado
+        if (minhaBusca != numeroBusca) return;
+
+        capasDiv.innerHTML = '';
+        if (capas.length === 0) {
+            capasDiv.innerHTML = '<span class="dica">Nenhuma capa encontrada para este nome.</span>';
+            return;
+        }
+
+        capas.forEach(function (url) {
+            const img = document.createElement('img');
+            img.src = url;
+            img.className = 'capa-opcao';
+            img.addEventListener('click', function () {
+                escolheCapa(url);
+            });
+            capasDiv.appendChild(img);
+        });
+        // escolhe a primeira automaticamente
+        escolheCapa(capas[0]);
+    }
